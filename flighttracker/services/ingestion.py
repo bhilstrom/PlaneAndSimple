@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from flighttracker.domain.layovers import has_overnight_layover
 from flighttracker.domain.spec import SearchSpec, departure_months, route_pairs
 from flighttracker.models import (
     CalendarObservation,
@@ -53,6 +54,7 @@ def build_queries(
             currency=currency or filters.currency,
             days_per_month=filters.days_per_month,
             return_flights=filters.return_flights,
+            no_overnight_layovers=filters.no_overnight_layovers,
         )
         for origin, destination in route_pairs(spec)
         for cabin in sorted(filters.cabin_classes)
@@ -98,6 +100,8 @@ def accept_quote(quote: PriceQuote, query: PriceQuery) -> bool:
             query.currency,
             quote.provider,
         )
+        return False
+    if query.no_overnight_layovers and has_overnight_layover(quote.details):
         return False
     return query.max_stops is None or quote.stops is None or quote.stops <= query.max_stops
 

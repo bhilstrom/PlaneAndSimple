@@ -42,10 +42,12 @@
   · {{ _(labels.TRIP_TYPE_LABELS[f.trip_type]) }}
   · {% for c in f.cabin_classes | sort %}{{ _(labels.CABIN_LABELS[c]) }}{% if not loop.last %}, {% endif %}{% endfor %}
   · {{ _("1 passenger") if passengers == 1 else _("{n} passengers", n=passengers) }}
+  {%- if f.no_overnight_layovers %} · {{ _("no overnight layovers") }}{% endif %}
   · {{ _("Last poll") }}: {{ search.last_polled_at | datetime }}
 </p>
 {% if not provider.prices_all_passengers and passengers > 1 %}<p class="note">{{ _('Note: prices from "{provider}" are for one adult; the number of passengers is not considered.', provider=provider.name) }}</p>
-{% elif f.children and not provider.supports_children %}<p class="note">{{ _('Note: not available with the data source "{provider}" – prices do not include children.', provider=provider.name) }}</p>{% endif %}
+{% elif f.children and not provider.supports_children %}<p class="note">{{ _('Note: not available with the data source "{provider}" – prices do not include children.', provider=provider.name) }}</p>
+{% elif f.no_overnight_layovers and not provider.supports_overnight_filter %}<p class="note">{{ _('Note: not available with the data source "{provider}".', provider=provider.name) }}</p>{% endif %}
 {% if hidden_passenger_prices %}<p class="hint">{{ _("{n} prices observed for a different number of passengers are not shown – they are not comparable.", n=hidden_passenger_prices) }}</p>{% endif %}
 {% include "searches/_poll_report.html" %}
 
@@ -143,6 +145,7 @@
     <dt>{{ _("Origin") }}</dt><dd>{{ origins }}</dd>
     <dt>{{ _("Destination") }}</dt><dd>{{ destinations }}</dd>
     <dt>{{ _("Stops") }}</dt><dd>{{ _(labels.stops_label(f.max_stops)) }}</dd>
+    <dt>{{ _("Overnight layovers") }}</dt><dd>{{ _("excluded") if f.no_overnight_layovers else _("allowed") }}</dd>
     <dt>{{ _("Period") }}</dt><dd>{{ _("{n} months ahead", n=f.months_ahead) }}</dd>
     <dt>{{ _("Departure days") }}</dt><dd>{% if f.days_per_month in labels.DAYS_PER_MONTH_LABELS %}{{ _(labels.DAYS_PER_MONTH_LABELS[f.days_per_month]) }}{% else %}{{ f.days_per_month }}{% endif %}{% if estimate.stay_lengths %} · {{ _("stays of {days} days", days=estimate.stay_lengths | join(", ")) }}{% endif %}</dd>
     {% if f.trip_type == "round_trip" %}<dt>{{ _("Return flights") }}</dt><dd>{{ _("loaded") if f.return_flights else _("not loaded (chosen on Google Flights)") }}</dd>{% endif %}

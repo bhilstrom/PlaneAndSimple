@@ -132,6 +132,7 @@ SETTINGS_FIELD_LABELS = {
     "scraper_days_per_month": "Default departure dates sampled per month",
     "scraper_request_delay_seconds": "Pause between scraper requests (seconds)",
     "scraper_return_flights": "Default: load return flights",
+    "scraper_no_overnight_layovers": "Default: exclude overnight layovers",
     "default_currency": "Global currency",
     "default_poll_interval_minutes": "Global poll interval (minutes)",
     "worker_tick_seconds": "Worker tick interval (seconds)",
@@ -176,6 +177,10 @@ SETTINGS_FIELD_HINTS = {
         "Preset for new round-trip tracked searches; each one can switch it under More options. "
         "Google Flights lists a round trip by its outbound flight; loading the return flight "
         "takes one more request per price and doubles the requests of the tracked search."
+    ),
+    "scraper_no_overnight_layovers": (
+        "Preset for new tracked searches and Trips; each one can switch it under More options. "
+        "Skips itineraries where a connecting flight leaves on a later local day."
     ),
     "default_currency": (
         "Currency requested from the provider for every search and Trip. Stored prices keep "

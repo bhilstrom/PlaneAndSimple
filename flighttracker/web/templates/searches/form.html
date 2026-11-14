@@ -121,6 +121,11 @@
         hint=_("How many departure dates are queried per month: half of them evenly spread (the same every poll, for a continuous price history), the other half the cheapest days of Google's price calendar. This affects coverage and requests per poll, not poll frequency. Example (Google Flights, 1 route, 6 months, one-way): 4 per month = 24 requests, every day = 186 requests. Round trips multiply this by the number of stay lengths (up to 8). Warning: many requests per poll can get your IP temporarily blocked by Google – keep 4 unless you track few routes.")) }}
     </div>
     <div class="field">
+      <span class="field-label"><label class="choice"><input type="checkbox" name="no_overnight_layovers" value="1"{% if values.no_overnight_layovers %} checked{% endif %}> <span>{{ _("Exclude overnight layovers") }}</span></label>
+        {%- if provider.supports_overnight_filter %}{{ ui.info(_("Skips itineraries where a connecting flight leaves the following day, so the cheapest same-day connection is tracked instead.")) }}{% endif %}</span>
+      {% if not provider.supports_overnight_filter %}<small class="hint">{{ _('Note: not available with the data source "{provider}".', provider=provider.name) }}</small>{% endif %}
+    </div>
+    <div class="field">
       <span class="field-label"><label class="choice"><input type="checkbox" name="return_flights" value="1"{% if values.return_flights %} checked{% endif %}> <span>{{ _("Load return flights") }}</span></label>
         {%- if provider.supports_return_flights %}{{ ui.info(_("Round trips only. Google Flights lists a round trip by its outbound flight; one more request per price loads its return flight (shown on the flight page with its flight numbers). This doubles the requests per poll of this tracked search.")) }}{% endif %}</span>
       {% if not provider.supports_return_flights %}<small class="hint">{{ _('Note: not available with the data source "{provider}".', provider=provider.name) }}</small>

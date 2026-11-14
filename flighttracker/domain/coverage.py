@@ -60,6 +60,7 @@ def filters_covered(new: SearchFilters, existing: SearchFilters) -> bool:
         is_compatible(new, existing)
         and new.cabin_classes <= existing.cabin_classes
         and new.max_stops == existing.max_stops
+        and new.no_overnight_layovers == existing.no_overnight_layovers
         and new.months_ahead <= existing.months_ahead
         and _days_covered(new.days_per_month, existing.days_per_month)
         and _stays_covered(new, existing)

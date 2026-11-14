@@ -59,6 +59,7 @@ def default_values(settings: Settings) -> dict:
         "months_ahead": "6",
         "days_per_month": str(settings.scraper_days_per_month),
         "return_flights": settings.scraper_return_flights,
+        "no_overnight_layovers": settings.scraper_no_overnight_layovers,
         "stay_days_min": "",
         "stay_days_max": "",
         "adults": "1",
@@ -82,6 +83,7 @@ def values_from_spec(name: str, spec: SearchSpec, poll_interval_minutes: int) ->
         "months_ahead": str(f.months_ahead),
         "days_per_month": str(f.days_per_month),
         "return_flights": f.return_flights,
+        "no_overnight_layovers": f.no_overnight_layovers,
         "stay_days_min": "" if f.stay_days_min is None else str(f.stay_days_min),
         "stay_days_max": "" if f.stay_days_max is None else str(f.stay_days_max),
         "adults": str(f.adults),
@@ -159,7 +161,12 @@ def parse_search_form(
     values["currency"] = default_currency.upper()
     values["poll_interval_hours"] = str(max(poll_interval_minutes // 60, 1))
     values["cabin_classes"] = [v for v in form.getlist("cabin_classes") if isinstance(v, str)]
-    values["return_flights"] = _text(form, "return_flights") == "1"
+    values["return_flights"] = (
+        _text(form, "return_flights") == "1" or form.get("return_flights") is True
+    )
+    values["no_overnight_layovers"] = (
+        _text(form, "no_overnight_layovers") == "1" or form.get("no_overnight_layovers") is True
+    )
     # Countries whose checkboxes were part of the submitted form (hidden field).
     values["airport_countries"] = sorted(
         code for code in _text(form, "airport_countries").upper().split(",") if code
@@ -210,6 +217,7 @@ def parse_search_form(
         # Kept in the form when switching to one-way, but only round trips have return flights.
         "return_flights": values["return_flights"]
         and values["trip_type"] == TripType.ROUND_TRIP.value,
+        "no_overnight_layovers": values["no_overnight_layovers"],
     }
     if not filters_input["cabin_classes"]:
         errors.append(Msg("Please select at least one cabin class."))

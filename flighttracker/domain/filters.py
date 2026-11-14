@@ -63,6 +63,8 @@ class SearchFilters(BaseModel):
     days_per_month: int = Field(default=4, ge=1, le=31)
     # Round trips: also load the return flight of every price (one more request each).
     return_flights: bool = False
+    # Skip itineraries where a connecting flight departs on a later local day.
+    no_overnight_layovers: bool = False
 
     @model_validator(mode="after")
     def _check_stay(self) -> "SearchFilters":

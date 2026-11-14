@@ -60,6 +60,7 @@ SETTING_FIELDS: tuple[SettingField, ...] = (
     SettingField("scraper_days_per_month", PROVIDERS_SECTION, "int", min=1, max=31),
     SettingField("scraper_request_delay_seconds", PROVIDERS_SECTION, "float", min=0, max=60),
     SettingField("scraper_return_flights", PROVIDERS_SECTION, "bool"),
+    SettingField("scraper_no_overnight_layovers", PROVIDERS_SECTION, "bool"),
     SettingField("default_currency", SEARCHES_SECTION, "currency"),
     SettingField("default_poll_interval_minutes", SEARCHES_SECTION, "int", min=15, max=43200),
     SettingField("worker_tick_seconds", WORKER_SECTION, "int", min=1, max=3600),

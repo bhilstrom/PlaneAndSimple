@@ -26,6 +26,8 @@ class PriceQuery:
     departure_dates: tuple[date, ...] | None = None
     # Round trips: also load the return flight of every price (`supports_return_flights`).
     return_flights: bool = False
+    # Skip itineraries with an overnight layover (`supports_overnight_filter`).
+    no_overnight_layovers: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,6 +103,8 @@ class FlightPriceProvider(ABC):
     # True: can load the return flight of a round trip (one more request per round-trip quote,
     # only for queries with `return_flights`).
     supports_return_flights: ClassVar[bool] = False
+    # True: segment dates/times are known so overnight layovers can be filtered out.
+    supports_overnight_filter: ClassVar[bool] = False
 
     @abstractmethod
     def fetch_current(self, query: PriceQuery) -> list[PriceQuote]:

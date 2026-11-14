@@ -173,6 +173,11 @@ def test_draft_becomes_form_values(post):
     assert (values["stay_days_min"], values["stay_days_max"], values["adults"]) == ("6", "8", "2")
     one_way = ai_prompts.draft_values(draft | {"trip_type": "one_way"}, default_values(settings()))
     assert one_way[0]["stay_days_min"] == ""
+    preset_defaults = default_values(settings(scraper_no_overnight_layovers=True))
+    kept = ai_prompts.draft_values(draft | {"no_overnight_layovers": None}, preset_defaults)[0]
+    assert kept["no_overnight_layovers"] is True
+    explicit = ai_prompts.draft_values(draft | {"no_overnight_layovers": False}, preset_defaults)[0]
+    assert explicit["no_overnight_layovers"] is False
 
 
 def test_thinking_is_never_part_of_the_answer(post):

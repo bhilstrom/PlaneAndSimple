@@ -120,6 +120,7 @@ def merge_filters(existing: SearchFilters, new: SearchFilters) -> SearchFilters:
             "stay_days_min": _min_or_none(existing.stay_days_min, new.stay_days_min),
             "stay_days_max": _max_or_none(existing.stay_days_max, new.stay_days_max),
             "return_flights": existing.return_flights or new.return_flights,
+            "no_overnight_layovers": existing.no_overnight_layovers and new.no_overnight_layovers,
         }
     )
 

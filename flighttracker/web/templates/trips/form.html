@@ -86,6 +86,11 @@
   </div>
   {{ ui.choice_group("cabin_classes", _("Cabin class"), labels.CABIN_LABELS.items() | tr_options, values.cabin_classes, multiple=True) }}
   {{ ui.select_field("max_stops", _("Maximum stops per leg"), labels.STOPS_OPTIONS | tr_options, values.max_stops, hint=_("Stops are layovers within a leg (changing planes on the same journey); the stays between legs are set above.")) }}
+  <div class="field">
+    <span class="field-label"><label class="choice"><input type="checkbox" name="no_overnight_layovers" value="1"{% if values.no_overnight_layovers %} checked{% endif %}> <span>{{ _("Exclude overnight layovers") }}</span></label>
+      {%- if provider.supports_overnight_filter %}{{ ui.info(_("Skips itineraries where a connecting flight leaves the following day, so the cheapest same-day connection is tracked instead.")) }}{% endif %}</span>
+    {% if not provider.supports_overnight_filter %}<small class="hint">{{ _('Note: not available with the data source "{provider}".', provider=provider.name) }}</small>{% endif %}
+  </div>
   <div class="actions">
     {{ ui.button(_("Create trip")) }}
     {{ ui.link_button(_("Cancel"), "/searches") }}

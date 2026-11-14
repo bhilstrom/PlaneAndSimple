@@ -52,6 +52,7 @@ class TripInput:
     adults: int
     currency: str
     children: int = 0
+    no_overnight_layovers: bool = False
 
 
 class TripValidationError(ValueError):
@@ -138,6 +139,7 @@ def _leg_specs(data: TripInput) -> list[SearchSpec]:
         children=data.children,
         currency=data.currency,
         days_per_month=1,
+        no_overnight_layovers=data.no_overnight_layovers,
     )
     return [
         SearchSpec(

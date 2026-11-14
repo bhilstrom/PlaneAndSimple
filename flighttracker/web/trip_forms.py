@@ -27,6 +27,7 @@ def default_trip_values(settings=None) -> dict:
         "currency": currency,
         "cabin_classes": [CabinClass.ECONOMY.value],
         "max_stops": "any",
+        "no_overnight_layovers": settings.scraper_no_overnight_layovers if settings else False,
         "legs": [
             {
                 "origin": "",
@@ -63,6 +64,8 @@ def trip_values_from_form(form: FormData, settings) -> dict:
             "children": str(form.get("children", "0")),
             "cabin_classes": form.getlist("cabin_classes"),
             "max_stops": str(form.get("max_stops", "any")),
+            "no_overnight_layovers": str(form.get("no_overnight_layovers", "")) == "1"
+            or form.get("no_overnight_layovers") is True,
         }
     )
     origins = form.getlist("leg_origin")
@@ -131,6 +134,7 @@ def trip_input_from_values(values: dict, settings) -> TripInput:
         adults=int(values["adults"]),
         currency=settings.default_currency,
         children=int(values["children"]),
+        no_overnight_layovers=bool(values.get("no_overnight_layovers")),
     )
 
 

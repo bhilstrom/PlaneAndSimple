@@ -1,4 +1,4 @@
-from flighttracker.domain.layovers import itinerary_warnings, layovers
+from flighttracker.domain.layovers import has_overnight_layover, itinerary_warnings, layovers
 
 
 def segment(origin, destination, departure, arrival):
@@ -57,3 +57,18 @@ def test_itinerary_warnings_include_the_return_flight():
     assert itinerary_warnings(None) == ()
     # Missing times: no length, no warning about it.
     assert layovers([{"to": "IST"}, {"from": "IST"}])[0].warnings == ()
+
+
+def test_has_overnight_layover_checks_outbound_and_return():
+    same_day = [
+        segment("ZRH", "FRA", "2026-12-01 09:00", "2026-12-01 10:00"),
+        segment("FRA", "LIS", "2026-12-01 12:00", "2026-12-01 14:15"),
+    ]
+    overnight = [
+        segment("ZRH", "FRA", "2026-12-01 21:00", "2026-12-01 22:00"),
+        segment("FRA", "LIS", "2026-12-02 07:00", "2026-12-02 09:15"),
+    ]
+    assert not has_overnight_layover(None)
+    assert not has_overnight_layover({"segments": same_day})
+    assert has_overnight_layover({"segments": overnight})
+    assert has_overnight_layover({"segments": same_day, "return": {"segments": overnight}})

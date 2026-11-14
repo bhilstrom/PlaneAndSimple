@@ -86,3 +86,8 @@ def itinerary_warnings(details: dict | None) -> tuple[str, ...]:
         for layover in layovers(part.get("segments") or []):
             found.update(layover.warnings)
     return tuple(warning for warning in WARNINGS if warning in found)
+
+
+def has_overnight_layover(details: dict | None) -> bool:
+    """True when the outbound or (if loaded) the return flight has an overnight layover."""
+    return OVERNIGHT in itinerary_warnings(details)

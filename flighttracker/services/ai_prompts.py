@@ -57,6 +57,7 @@ DRAFT_SCHEMA = {
         "stay_days_max": _NULLABLE_INT,
         "adults": {"type": "integer"},
         "children": {"type": "integer"},
+        "no_overnight_layovers": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
         "notes": {"type": "string"},
     },
     "required": [
@@ -71,6 +72,7 @@ DRAFT_SCHEMA = {
         "stay_days_max",
         "adults",
         "children",
+        "no_overnight_layovers",
         "notes",
     ],
     "additionalProperties": False,
@@ -89,6 +91,8 @@ Fields (answer with one JSON object, nothing else):
 - months_ahead: how many months from the current month to track, 1–12 (cover the travel period).
 - stay_days_min / stay_days_max: length of stay in days for round trips, else null.
 - adults (1–9) and children aged 2–11 (0–8); default 1 adult, 0 children.
+- no_overnight_layovers: true if the wish excludes overnight layovers, false if explicitly
+  allowed, else null.
 - notes: one sentence in the answer language on what you assumed or could not express
   (e.g. exact dates – the app tracks whole months).
 
@@ -145,6 +149,8 @@ def draft_values(draft: dict, defaults: dict) -> tuple[dict, dict[str, list[str]
         values[key] = str(stay) if stay is not None else ""
     values["adults"] = str(_int(draft.get("adults"), 1, 9, 1))
     values["children"] = str(_int(draft.get("children"), 0, 8, 0))
+    if isinstance(draft.get("no_overnight_layovers"), bool):
+        values["no_overnight_layovers"] = draft["no_overnight_layovers"]
     return values, unresolved
 
 

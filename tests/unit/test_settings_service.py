@@ -58,5 +58,7 @@ def test_validate_rejects_unusable_request_delay(raw):
 def test_validate_bool():
     assert validate("scraper_return_flights", "true") is True
     assert validate("scraper_return_flights", "False") is False
+    assert validate("scraper_no_overnight_layovers", "true") is True
+    assert validate("scraper_no_overnight_layovers", "false") is False
     with pytest.raises(SettingValidationError):
         validate("scraper_return_flights", "yes please")

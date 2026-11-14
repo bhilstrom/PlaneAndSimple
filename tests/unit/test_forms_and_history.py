@@ -58,7 +58,10 @@ class TestSearchForm:
         assert result.data.poll_interval_minutes == 1440
 
     def test_roundtrip_through_values(self):
-        data = parse_search_form(form(max_stops="0", stay_days_min="3")).data
+        data = parse_search_form(
+            form(max_stops="0", stay_days_min="3", no_overnight_layovers="1")
+        ).data
+        assert data.spec.filters.no_overnight_layovers is True
         values = values_from_spec(data.name, data.spec, data.poll_interval_minutes)
         again = parse_search_form(
             FormData(

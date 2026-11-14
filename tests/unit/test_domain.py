@@ -180,6 +180,10 @@ class TestSpec:
         assert not f.return_flights
         with_returns = spec([A("GVA")], [A("MAD")], return_flights=True)
         assert merge_specs(existing, with_returns).filters.return_flights
+        no_overnight = spec([A("ZRH")], [A("BCN")], no_overnight_layovers=True)
+        also_no_overnight = spec([A("GVA")], [A("MAD")], no_overnight_layovers=True)
+        assert merge_specs(no_overnight, also_no_overnight).filters.no_overnight_layovers
+        assert not merge_specs(no_overnight, existing).filters.no_overnight_layovers
 
     def test_merge_unions_airport_selections(self):
         merged = merge_specs(
@@ -282,6 +286,10 @@ class TestCoverage:
             # Return flights: only a Suchabo that loads them covers one that wants them.
             ({"return_flights": True}, {}, False),
             ({}, {"return_flights": True}, True),
+            # Overnight layovers: only the cheapest matching itinerary per day is stored.
+            ({"no_overnight_layovers": True}, {}, False),
+            ({}, {"no_overnight_layovers": True}, False),
+            ({"no_overnight_layovers": True}, {"no_overnight_layovers": True}, True),
         ],
     )
     def test_filters_covered(self, new, existing, covered):

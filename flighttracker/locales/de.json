@@ -845,5 +845,13 @@
   "Users can get a daily or weekly price digest by mail (personal settings). With this on, the AI writes a few sentences on top about the most important changes across their tracked searches and Trips – one request per mail.": "Benutzer können einen täglichen oder wöchentlichen Preis-Digest per Mail bekommen (persönliche Einstellungen). Ist dies an, schreibt die KI oben ein paar Sätze zu den wichtigsten Änderungen über alle ihre Suchabos und Trips – eine Anfrage pro Mail.",
   "Weekly": "Wöchentlich",
   "You get this digest every Monday when prices changed notably.": "Du bekommst diesen Digest jeden Montag, wenn sich Preise nennenswert geändert haben.",
-  "You get this digest every morning when prices changed notably.": "Du bekommst diesen Digest jeden Morgen, wenn sich Preise nennenswert geändert haben."
+  "You get this digest every morning when prices changed notably.": "Du bekommst diesen Digest jeden Morgen, wenn sich Preise nennenswert geändert haben.",
+  "Default: exclude overnight layovers": "Standard: Übernacht-Umstiege ausschliessen",
+  "Preset for new tracked searches and Trips; each one can switch it under More options. Skips itineraries where a connecting flight leaves on a later local day.": "Voreinstellung für neue Suchabos und Trips; jedes kann es unter Weitere Optionen ändern. Überspringt Verbindungen, bei denen der Anschlussflug erst an einem späteren Kalendertag abfliegt.",
+  "Exclude overnight layovers": "Übernacht-Umstiege ausschliessen",
+  "Skips itineraries where a connecting flight leaves the following day, so the cheapest same-day connection is tracked instead.": "Überspringt Verbindungen, bei denen ein Anschlussflug erst am nächsten Tag abfliegt, sodass stattdessen der günstigste Anschluss am selben Tag verfolgt wird.",
+  "no overnight layovers": "keine Übernacht-Umstiege",
+  "Overnight layovers": "Übernacht-Umstiege",
+  "excluded": "ausgeschlossen",
+  "allowed": "erlaubt"
 }

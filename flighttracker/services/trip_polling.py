@@ -59,6 +59,7 @@ def trip_query(
         currency=currency or filters.currency,
         days_per_month=1,
         departure_dates=days,
+        no_overnight_layovers=filters.no_overnight_layovers,
     )
 
 

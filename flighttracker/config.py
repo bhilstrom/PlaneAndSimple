@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     scraper_request_delay_seconds: float = Field(default=3.0, ge=0, le=60)
     # Default for new round-trip Suchabos: also load the return flight of every price.
     scraper_return_flights: bool = False
+    # Default for new Suchabos and Trips: skip itineraries with an overnight layover.
+    scraper_no_overnight_layovers: bool = False
 
     worker_tick_seconds: int = Field(default=30, ge=1, le=3600)
     default_poll_interval_minutes: int = Field(default=1440, ge=15, le=43200)

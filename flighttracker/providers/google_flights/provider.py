@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from functools import partial
 
+from flighttracker.domain.layovers import has_overnight_layover
 from flighttracker.domain.sampling import sample_days
 from flighttracker.providers.base import (
     CalendarPrice,
@@ -60,6 +61,7 @@ class GoogleFlightsProvider(FlightPriceProvider):
     supports_connection_times = True
     calendar_days_per_request = CALENDAR_DAYS_PER_REQUEST
     supports_return_flights = True
+    supports_overnight_filter = True
 
     def __init__(
         self,
@@ -79,11 +81,16 @@ class GoogleFlightsProvider(FlightPriceProvider):
         self._sleep = sleep
 
     def _allowed(self, options: list[FareOption], query: PriceQuery) -> list[FareOption]:
-        return [o for o in options if query.max_stops is None or o.stops <= query.max_stops]
+        return [
+            o
+            for o in options
+            if (query.max_stops is None or o.stops <= query.max_stops)
+            and (not query.no_overnight_layovers or not has_overnight_layover(o.details))
+        ]
 
     def _with_return(
         self, request: FareRequest, outbound: FareOption, query: PriceQuery
-    ) -> FareOption:
+    ) -> FareOption | None:
         """The cheapest return flight of this outbound flight (one more request).
 
         Its price is the round-trip total of exactly this combination. Without a usable
@@ -93,14 +100,17 @@ class GoogleFlightsProvider(FlightPriceProvider):
         if legs is None:
             return outbound
         try:
-            options = self._allowed(self._return_search(request, legs), query)
+            raw = self._return_search(request, legs)
         except ProviderError as exc:
             log.warning("%s→%s return flights skipped: %s", query.origin, query.destination, exc)
             return outbound
         finally:
             self._sleep(self._delay)
-        if not options:
+        if not raw:
             return outbound
+        options = self._allowed(raw, query)
+        if not options:
+            return None if query.no_overnight_layovers else outbound
         back = min(options, key=lambda o: o.price)
         details = dict(outbound.details or {})
         if back.details:
@@ -174,6 +184,8 @@ class GoogleFlightsProvider(FlightPriceProvider):
             cheapest = min(allowed, key=lambda o: o.price)
             if query.return_flights and return_date is not None:
                 cheapest = self._with_return(request, cheapest, query)
+                if cheapest is None:
+                    continue
             quotes.append(
                 PriceQuote(
                     provider=self.name,

@@ -298,6 +298,73 @@ class TestGoogleFlights:
         with pytest.raises(ValueError):
             parse_fares("<html>no script</html>")
 
+    def test_excludes_overnight_layovers_when_requested(self):
+        overnight_details = {
+            "segments": [
+                {
+                    "flight": "TP 931",
+                    "from": "ZRH",
+                    "to": "LIS",
+                    "departure_date": "2026-11-01",
+                    "departure_time": "20:00",
+                    "arrival_date": "2026-11-01",
+                    "arrival_time": "22:00",
+                },
+                {
+                    "flight": "TP 1920",
+                    "from": "LIS",
+                    "to": "OPO",
+                    "departure_date": "2026-11-02",
+                    "departure_time": "08:00",
+                    "arrival_date": "2026-11-02",
+                    "arrival_time": "09:00",
+                },
+            ]
+        }
+        same_day_details = {
+            "segments": [
+                {
+                    "flight": "IB 3475",
+                    "from": "ZRH",
+                    "to": "MAD",
+                    "departure_date": "2026-11-01",
+                    "departure_time": "08:00",
+                    "arrival_date": "2026-11-01",
+                    "arrival_time": "10:25",
+                },
+                {
+                    "flight": "IB 3102",
+                    "from": "MAD",
+                    "to": "OPO",
+                    "departure_date": "2026-11-01",
+                    "departure_time": "12:00",
+                    "arrival_date": "2026-11-01",
+                    "arrival_time": "12:15",
+                },
+            ]
+        }
+        options = [
+            FareOption(140, 1, "TP", overnight_details),
+            FareOption(210, 1, "IB", same_day_details),
+        ]
+        provider = GoogleFlightsProvider(
+            search=lambda r: options, clock=lambda: NOW, sleep=lambda _: None
+        )
+        (with_overnight,) = provider.fetch_current(query(days_per_month=1))
+        assert (with_overnight.price, with_overnight.airline) == (Decimal(140), "TP")
+
+        (without_overnight,) = provider.fetch_current(
+            query(days_per_month=1, no_overnight_layovers=True)
+        )
+        assert (without_overnight.price, without_overnight.airline) == (Decimal(210), "IB")
+
+        only_overnight = GoogleFlightsProvider(
+            search=lambda r: [options[0]], clock=lambda: NOW, sleep=lambda _: None
+        )
+        assert (
+            only_overnight.fetch_current(query(days_per_month=1, no_overnight_layovers=True)) == []
+        )
+
     def test_skips_past_days(self):
         provider = GoogleFlightsProvider(
             search=lambda r: [FareOption(100, 0, None)], clock=lambda: NOW, sleep=lambda _: None
@@ -479,6 +546,115 @@ class TestReturnFlights:
         )
         assert calls == []
 
+    def test_filters_overnight_return_flights(self):
+        same_day_outbound = FareOption(
+            980,
+            1,
+            "EY",
+            {
+                "airlines": ["Etihad"],
+                "segments": [
+                    {
+                        "flight": "EY 140",
+                        "from": "ZRH",
+                        "to": "AUH",
+                        "departure_date": "2026-11-12",
+                        "departure_time": "10:00",
+                        "arrival_date": "2026-11-12",
+                        "arrival_time": "19:00",
+                    },
+                    {
+                        "flight": "EY 400",
+                        "from": "AUH",
+                        "to": "BKK",
+                        "departure_date": "2026-11-12",
+                        "departure_time": "21:30",
+                        "arrival_date": "2026-11-13",
+                        "arrival_time": "06:30",
+                    },
+                ],
+                "url": "https://www.google.com/travel/flights?tfs=x",
+            },
+        )
+        overnight_return = FareOption(
+            980,
+            1,
+            "EY",
+            {
+                "segments": [
+                    {
+                        "flight": "EY 407",
+                        "from": "BKK",
+                        "to": "AUH",
+                        "departure_date": "2026-11-19",
+                        "departure_time": "18:00",
+                        "arrival_date": "2026-11-19",
+                        "arrival_time": "22:00",
+                    },
+                    {
+                        "flight": "EY 143",
+                        "from": "AUH",
+                        "to": "ZRH",
+                        "departure_date": "2026-11-20",
+                        "departure_time": "08:30",
+                        "arrival_date": "2026-11-20",
+                        "arrival_time": "12:45",
+                    },
+                ]
+            },
+        )
+        same_day_return = FareOption(
+            1060,
+            1,
+            "EY",
+            {
+                "segments": [
+                    {
+                        "flight": "EY 401",
+                        "from": "BKK",
+                        "to": "AUH",
+                        "departure_date": "2026-11-19",
+                        "departure_time": "08:30",
+                        "arrival_date": "2026-11-19",
+                        "arrival_time": "12:15",
+                    },
+                    {
+                        "flight": "EY 141",
+                        "from": "AUH",
+                        "to": "ZRH",
+                        "departure_date": "2026-11-19",
+                        "departure_time": "14:10",
+                        "arrival_date": "2026-11-19",
+                        "arrival_time": "18:15",
+                    },
+                ]
+            },
+        )
+        provider = GoogleFlightsProvider(
+            search=lambda r: [same_day_outbound],
+            return_search=lambda r, legs: [overnight_return, same_day_return],
+            clock=lambda: NOW,
+            sleep=lambda _: None,
+        )
+        (quote,) = provider.fetch_current(
+            query(days_per_month=1, return_flights=True, no_overnight_layovers=True)
+        )
+        assert quote.price == Decimal(1060)
+        assert quote.details["return"]["segments"][0]["flight"] == "EY 401"
+
+        only_overnight_return = GoogleFlightsProvider(
+            search=lambda r: [same_day_outbound],
+            return_search=lambda r, legs: [overnight_return],
+            clock=lambda: NOW,
+            sleep=lambda _: None,
+        )
+        assert (
+            only_overnight_return.fetch_current(
+                query(days_per_month=1, return_flights=True, no_overnight_layovers=True)
+            )
+            == []
+        )
+
 
 class _Settings:
     def __init__(self, provider):
@@ -487,6 +663,7 @@ class _Settings:
         self.scraper_days_per_month = 4
         self.scraper_request_delay_seconds = 0
         self.scraper_return_flights = False
+        self.scraper_no_overnight_layovers = False
 
 
 def test_registry_rejects_unknown_provider():
@@ -501,7 +678,9 @@ def test_registry_builds_mock():
 def test_capabilities_and_fake_data():
     assert FAKE_DATA_PROVIDERS == {"mock"}
     assert provider_class("google_flights").supports_children
+    assert provider_class("google_flights").supports_overnight_filter
     assert not provider_class("travelpayouts").supports_children
+    assert not provider_class("travelpayouts").supports_overnight_filter
     assert not provider_class("travelpayouts").prices_all_passengers
     with pytest.raises(ValueError, match="Available"):
         provider_class("nope")
