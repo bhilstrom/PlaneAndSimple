@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from flighttracker.config import Settings
 from flighttracker.domain.deals import unusual_prices
+from flighttracker.domain.layovers import allowed_observation
 from flighttracker.domain.locations import describe_locations
 from flighttracker.domain.poll_report import (
     Flight,
@@ -59,6 +60,7 @@ def _series(session: Session, search: Search, today: date) -> dict[FlightKey, li
             PriceHistory.return_date,
             PriceHistory.price,
             PriceHistory.observed_at,
+            PriceHistory.details,
         )
         .where(
             PriceHistory.search_id == search.id,
@@ -71,6 +73,10 @@ def _series(session: Session, search: Search, today: date) -> dict[FlightKey, li
     )
     series: dict[FlightKey, list[tuple[datetime, Decimal]]] = defaultdict(list)
     for r in rows:
+        if not allowed_observation(
+            r.details, r.return_date, no_overnight_layovers=filters.no_overnight_layovers
+        ):
+            continue
         key = (r.origin_iata, r.destination_iata, str(r.cabin_class), r.currency, r.departure_date)
         series[(*key, r.return_date)].append((r.observed_at, r.price))
     return series

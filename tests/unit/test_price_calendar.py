@@ -220,3 +220,20 @@ def test_return_flights_double_the_fare_requests_of_round_trips():
         round_trip, samples_days=True, calendar_days=61, return_flights=True
     ) == (2 * 2 * 4 + calendar_requests_per_poll(round_trip, 61))
     assert requests_per_poll(one_way, samples_days=True, return_flights=True) == 2 * 4
+    round_trip_no_overnight = SearchSpec(
+        frozenset({LocationRef.airport("ZRH")}),
+        frozenset({LocationRef.airport("BKK")}),
+        SearchFilters(months_ahead=2, days_per_month=4, no_overnight_layovers=True),
+    )
+    one_way_no_overnight = SearchSpec(
+        frozenset({LocationRef.airport("ZRH")}),
+        frozenset({LocationRef.airport("BKK")}),
+        SearchFilters(
+            months_ahead=2,
+            days_per_month=4,
+            trip_type=TripType.ONE_WAY,
+            no_overnight_layovers=True,
+        ),
+    )
+    assert requests_per_poll(round_trip_no_overnight, samples_days=True, return_flights=True) == 16
+    assert requests_per_poll(one_way_no_overnight, samples_days=True, return_flights=True) == 8

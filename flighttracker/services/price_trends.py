@@ -9,6 +9,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from flighttracker.domain.layovers import allowed_observation
 from flighttracker.models import PriceHistory
 from flighttracker.services.history import Passengers, PricePoint
 
@@ -39,7 +40,12 @@ def flight_key(point: PricePoint) -> FlightKey:
 
 
 def price_series(
-    session: Session, search_id: int, since_departure: date, *, passengers: Passengers | None = None
+    session: Session,
+    search_id: int,
+    since_departure: date,
+    *,
+    passengers: Passengers | None = None,
+    no_overnight_layovers: bool = False,
 ) -> dict[FlightKey, list[PriceObservation]]:
     """Every observed price per flight (oldest first) for departures from `since_departure` on."""
     statement = (
@@ -52,6 +58,7 @@ def price_series(
             PriceHistory.return_date,
             PriceHistory.price,
             PriceHistory.observed_at,
+            PriceHistory.details,
         )
         .where(PriceHistory.search_id == search_id, PriceHistory.departure_date >= since_departure)
         .order_by(PriceHistory.observed_at, PriceHistory.id)
@@ -62,7 +69,21 @@ def price_series(
         )
     rows = session.execute(statement)
     series: dict[FlightKey, list[PriceObservation]] = {}
-    for origin, destination, cabin, currency, departure, return_date, price, observed_at in rows:
+    for (
+        origin,
+        destination,
+        cabin,
+        currency,
+        departure,
+        return_date,
+        price,
+        observed_at,
+        details,
+    ) in rows:
+        if not allowed_observation(
+            details, return_date, no_overnight_layovers=no_overnight_layovers
+        ):
+            continue
         key = (origin, destination, str(cabin), currency, departure, return_date)
         series.setdefault(key, []).append(PriceObservation(price, observed_at))
     return series

@@ -67,8 +67,8 @@ def stops_code(max_stops: int | None) -> int:
 
 
 def _time(value: list | None) -> str | None:
-    """Google omits zero components: [8] = 08:00, [None, 31] = 00:31, None = unknown."""
-    if not value:
+    """Google omits zero components: [] = 00:00, [8] = 08:00, [None, 31] = 00:31, None = unknown."""
+    if not isinstance(value, list):
         return None
     hours, minutes = ([*value, None, None])[:2]
     return f"{hours or 0:02d}:{minutes or 0:02d}"
@@ -211,19 +211,20 @@ def with_retries[T](
     sleep: Callable[[float], None],
     what: str,
 ) -> T:
-    """`parse(fetch())`, repeated after `RETRY_SECONDS` while the answer is unusable (`parse`
-    raises ValueError, mostly Google's error response). A ProviderError is not retried."""
+    """`parse(fetch())`, repeated after `RETRY_SECONDS` while Google answers with its transient
+    error response (`ERROR_RESPONSE_TYPE`). Other unusable answers and ProviderErrors fail right
+    away."""
     for wait in (*RETRY_SECONDS, None):
         text = fetch()
         try:
             return parse(text)
         except ValueError:
-            if wait is None:
-                if ERROR_RESPONSE_TYPE in text:
-                    raise ProviderError(
-                        f"Google Flights {what} kept answering with an error "
-                        f"({len(RETRY_SECONDS) + 1} attempts)"
-                    ) from None
+            if ERROR_RESPONSE_TYPE not in text:
                 raise ProviderError(f"Google Flights {what} has an unexpected format") from None
+            if wait is None:
+                raise ProviderError(
+                    f"Google Flights {what} kept answering with an error "
+                    f"({len(RETRY_SECONDS) + 1} attempts)"
+                ) from None
             sleep(wait)
     raise AssertionError("unreachable")

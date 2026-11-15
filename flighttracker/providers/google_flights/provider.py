@@ -44,6 +44,11 @@ from flighttracker.providers.google_flights.results import (
 
 log = logging.getLogger(__name__)
 
+# At most this many candidate outbound flights are checked for allowed return flights when
+# excluding overnight layovers (branch-and-bound stops after the first whenever its cheapest
+# allowed return keeps the quoted outbound lower-bound price).
+MAX_RETURN_CANDIDATES = 3
+
 
 def _calendar_prices(text: str, currency: str) -> list[CalendarPrice]:
     """ValueError (retried) for an unusable answer; the consent page is not worth a retry."""
@@ -94,28 +99,57 @@ class GoogleFlightsProvider(FlightPriceProvider):
         """The cheapest return flight of this outbound flight (one more request).
 
         Its price is the round-trip total of exactly this combination. Without a usable
-        answer the outbound option stays as it is – it already carries the round-trip total.
+        answer the outbound option stays as it is – unless overnight layovers are excluded,
+        where an unverified return leg could hide an overnight layover.
         """
         legs = selected_legs(outbound.details)
         if legs is None:
-            return outbound
+            return None if query.no_overnight_layovers else outbound
         try:
             raw = self._return_search(request, legs)
         except ProviderError as exc:
             log.warning("%s→%s return flights skipped: %s", query.origin, query.destination, exc)
-            return outbound
+            return None if query.no_overnight_layovers else outbound
         finally:
             self._sleep(self._delay)
         if not raw:
-            return outbound
+            return None if query.no_overnight_layovers else outbound
         options = self._allowed(raw, query)
         if not options:
             return None if query.no_overnight_layovers else outbound
         back = min(options, key=lambda o: o.price)
         details = dict(outbound.details or {})
-        if back.details:
+        if back.details is not None:
             details["return"] = {k: v for k, v in back.details.items() if k != "url"}
+        elif query.no_overnight_layovers:
+            details["return"] = {}
         return replace(outbound, price=back.price, details=details)
+
+    def _cheapest_with_return(
+        self, request: FareRequest, allowed: list[FareOption], query: PriceQuery
+    ) -> FareOption | None:
+        candidates = sorted(allowed, key=lambda o: o.price)
+        if not query.no_overnight_layovers:
+            return self._with_return(request, candidates[0], query)
+        best: FareOption | None = None
+        seen_legs: set[tuple] = set()
+        checked = 0
+        for candidate in candidates:
+            if checked >= MAX_RETURN_CANDIDATES:
+                break
+            if best is not None and candidate.price >= best.price:
+                break
+            legs = selected_legs(candidate.details)
+            if legs is not None:
+                key = tuple(legs)
+                if key in seen_legs:
+                    continue
+                seen_legs.add(key)
+            checked += 1
+            paired = self._with_return(request, candidate, query)
+            if paired is not None and (best is None or paired.price < best.price):
+                best = paired
+        return best
 
     def fetch_calendar(self, query: CalendarQuery) -> list[CalendarPrice]:
         """One request per 61 days; a failed chunk is skipped, all failing raises."""
@@ -181,11 +215,12 @@ class GoogleFlightsProvider(FlightPriceProvider):
             allowed = self._allowed(options, query)
             if not allowed:
                 continue
-            cheapest = min(allowed, key=lambda o: o.price)
-            if query.return_flights and return_date is not None:
-                cheapest = self._with_return(request, cheapest, query)
+            if (query.return_flights or query.no_overnight_layovers) and return_date is not None:
+                cheapest = self._cheapest_with_return(request, allowed, query)
                 if cheapest is None:
                     continue
+            else:
+                cheapest = min(allowed, key=lambda o: o.price)
             quotes.append(
                 PriceQuote(
                     provider=self.name,

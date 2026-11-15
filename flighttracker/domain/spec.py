@@ -2,7 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 
-from flighttracker.domain.filters import SearchFilters
+from flighttracker.domain.filters import SearchFilters, TripType
 from flighttracker.domain.locations import LocationRef, country_codes, expand_to_airports
 
 MAX_DAYS_PER_MONTH = 31
@@ -73,7 +73,10 @@ def requests_per_poll(
     """
     queries = queries_per_poll(spec)
     fares = queries * requests_per_query(spec) if samples_days else queries
-    if return_flights and spec.filters.return_flights:
+    loads_returns = spec.filters.return_flights or (
+        spec.filters.no_overnight_layovers and spec.filters.trip_type is TripType.ROUND_TRIP
+    )
+    if return_flights and loads_returns:
         fares *= 2
     calendar = calendar_requests_per_poll(spec, calendar_days) if calendar_days else 0
     return fares + calendar

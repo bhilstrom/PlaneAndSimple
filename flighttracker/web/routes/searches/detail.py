@@ -75,14 +75,24 @@ def detail(
     today = datetime.now(UTC).date()
     # Only prices for the current passengers: others are not comparable (see services/history).
     passengers = (spec.filters.adults, spec.filters.children)
-    observed = history.price_points(db, search.id, FAKE_DATA_PROVIDERS, passengers=passengers)
+    no_overnight = spec.filters.no_overnight_layovers
+    observed = history.price_points(
+        db,
+        search.id,
+        FAKE_DATA_PROVIDERS,
+        passengers=passengers,
+        no_overnight_layovers=no_overnight,
+    )
     # Upcoming prices only if the latest poll still found them (past ones feed the previous year).
     seen = history.latest_poll_dates(db, search.id)
     points = [p for p in observed if p.departure_date < today or history.is_current(p, seen)]
     outdated = len(observed) - len(points)
     upcoming = [p for p in points if p.departure_date >= today]
     trends = price_trends.flight_trends(
-        upcoming, price_trends.price_series(db, search.id, today, passengers=passengers)
+        upcoming,
+        price_trends.price_series(
+            db, search.id, today, passengers=passengers, no_overnight_layovers=no_overnight
+        ),
     )
     locale = current_locale(request)
     report = report_texts.view(poll_reports.latest_reports(db, [search.id]).get(search.id), locale)
@@ -206,7 +216,9 @@ def flight_page(
     observed = history.observation(db, search.id, price_id)
     if observed is None:
         raise HTTPException(status_code=404, detail="Price not found.")
-    observations = history.flight_history(db, observed)
+    observations = history.flight_history(
+        db, observed, no_overnight_layovers=spec_of(search).filters.no_overnight_layovers
+    )
     return templates.TemplateResponse(
         request,
         "searches/flight.html",

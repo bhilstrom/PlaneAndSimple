@@ -18,6 +18,7 @@ from decimal import Decimal
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from flighttracker.domain.layovers import allowed_observation
 from flighttracker.models import (
     CalendarObservation,
     FetchJob,
@@ -89,17 +90,75 @@ _PRICE_POINTS = text(
 Passengers = tuple[int, int]
 
 
+def _filtered_price_points(
+    session: Session,
+    search_id: int,
+    fake_providers: Collection[str],
+    passengers: Passengers | None,
+) -> list[PricePoint]:
+    fake = set(fake_providers)
+    statement = (
+        select(PriceHistory)
+        .where(PriceHistory.search_id == search_id)
+        .order_by(PriceHistory.observed_at.desc(), PriceHistory.id.desc())
+    )
+    if passengers is not None:
+        statement = statement.where(
+            PriceHistory.adults == passengers[0], PriceHistory.children == passengers[1]
+        )
+    grouped: dict[tuple, list[PriceHistory]] = {}
+    for row in session.scalars(statement):
+        if not allowed_observation(row.details, row.return_date, no_overnight_layovers=True):
+            continue
+        key = (
+            row.origin_iata,
+            row.destination_iata,
+            str(row.cabin_class),
+            row.currency,
+            row.departure_date,
+            row.return_date,
+        )
+        bucket = grouped.setdefault(key, [])
+        if len(bucket) < 2:
+            bucket.append(row)
+    points = [
+        PricePoint(
+            origin=rows[0].origin_iata,
+            destination=rows[0].destination_iata,
+            cabin_class=str(rows[0].cabin_class),
+            currency=rows[0].currency,
+            departure_date=rows[0].departure_date,
+            return_date=rows[0].return_date,
+            stops=rows[0].stops,
+            price=rows[0].price,
+            previous_price=rows[1].price if len(rows) > 1 else None,
+            airline=rows[0].airline,
+            details=rows[0].details,
+            observed_at=rows[0].observed_at,
+            provider=rows[0].provider,
+            fake=rows[0].provider in fake,
+            id=rows[0].id,
+        )
+        for rows in grouped.values()
+    ]
+    return sorted(points, key=lambda p: (p.departure_date, p.origin, p.destination, p.price))
+
+
 def price_points(
     session: Session,
     search_id: int,
     fake_providers: Collection[str] = (),
     *,
     passengers: Passengers | None = None,
+    no_overnight_layovers: bool = False,
 ) -> list[PricePoint]:
     """All price points of a Suchabo (past departures included), sorted by date and price.
 
     `passengers`: only observations for these (adults, children); None = all.
+    `no_overnight_layovers`: skip observations with overnight layovers (or unverified return legs).
     """
+    if no_overnight_layovers:
+        return _filtered_price_points(session, search_id, fake_providers, passengers)
     adults, children = passengers if passengers is not None else (None, None)
     rows = session.execute(
         _PRICE_POINTS,
@@ -256,10 +315,12 @@ def other_passenger_prices(
     )
 
 
-def flight_history(session: Session, observed: PriceHistory) -> list[PriceHistory]:
+def flight_history(
+    session: Session, observed: PriceHistory, *, no_overnight_layovers: bool = False
+) -> list[PriceHistory]:
     """Every poll's price for the same route, cabin, currency, passengers and flight dates,
     newest first."""
-    return list(
+    rows = list(
         session.scalars(
             select(PriceHistory)
             .where(
@@ -276,6 +337,14 @@ def flight_history(session: Session, observed: PriceHistory) -> list[PriceHistor
             .order_by(PriceHistory.observed_at.desc(), PriceHistory.id.desc())
         )
     )
+    if not no_overnight_layovers:
+        return rows
+    return [
+        row
+        for row in rows
+        if row.id == observed.id
+        or allowed_observation(row.details, row.return_date, no_overnight_layovers=True)
+    ]
 
 
 def observation_counts(session: Session, search_ids: list[int]) -> dict[int, int]:

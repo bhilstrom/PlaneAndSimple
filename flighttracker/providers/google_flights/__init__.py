@@ -12,7 +12,12 @@ carry a consent cookie (rejecting all optional cookies).
 """
 
 from flighttracker.providers.google_flights.common import FareOption, FareRequest, SelectedLeg
-from flighttracker.providers.google_flights.page import fast_flights_search, parse_fares
+from flighttracker.providers.google_flights.page import (
+    fast_flights_return_search,
+    fast_flights_search,
+    parse_fares,
+    return_tfs,
+)
 from flighttracker.providers.google_flights.price_calendar import (
     CALENDAR_DAYS_PER_REQUEST,
     calendar_request_body,
@@ -35,6 +40,7 @@ __all__ = [
     "GoogleFlightsProvider",
     "SelectedLeg",
     "calendar_request_body",
+    "fast_flights_return_search",
     "fast_flights_search",
     "google_calendar_search",
     "google_flights_search",
@@ -42,6 +48,7 @@ __all__ = [
     "parse_calendar",
     "parse_fares",
     "parse_shopping",
+    "return_tfs",
     "selected_legs",
     "shopping_request_body",
 ]

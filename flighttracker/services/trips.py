@@ -221,9 +221,8 @@ def trip_search_ids(session: Session, trips: list[Trip]) -> set[int]:
     return {leg.search_id for trip in trips for leg in trip.legs}
 
 
-def _passengers(search: Search) -> tuple[int, int]:
-    filters = SearchFilters.model_validate(search.filters)
-    return filters.adults, filters.children
+def _leg_filters(search: Search) -> SearchFilters:
+    return SearchFilters.model_validate(search.filters)
 
 
 def latest_poll_started(session: Session, trip_id: int) -> datetime | None:
@@ -247,18 +246,24 @@ def itineraries_for_trip(
     completed poll – an option an older poll found may no longer exist."""
     today = today or datetime.now(UTC).date()
     since = latest_poll_started(session, trip.id)
-    points_by_leg = [
-        [
-            point
-            for point in history.price_points(
-                session, leg.search_id, fake_providers, passengers=_passengers(leg.search)
-            )
-            if point.return_date is None
-            and point.departure_date >= today
-            and (since is None or point.observed_at >= since)
-        ]
-        for leg in trip.legs
-    ]
+    points_by_leg = []
+    for leg in trip.legs:
+        filters = _leg_filters(leg.search)
+        points_by_leg.append(
+            [
+                point
+                for point in history.price_points(
+                    session,
+                    leg.search_id,
+                    fake_providers,
+                    passengers=(filters.adults, filters.children),
+                    no_overnight_layovers=filters.no_overnight_layovers,
+                )
+                if point.return_date is None
+                and point.departure_date >= today
+                and (since is None or point.observed_at >= since)
+            ]
+        )
     rules = [LayoverRule(leg.min_layover_days, leg.max_layover_days) for leg in trip.legs[1:]]
     return find_itineraries(points_by_leg, rules, trip.starts_on, trip.ends_on)
 

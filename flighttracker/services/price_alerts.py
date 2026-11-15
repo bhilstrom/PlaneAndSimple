@@ -145,7 +145,11 @@ def matches(session: Session, search: Search, now: datetime) -> dict[PriceAlert,
         return {}
     filters = spec_of(search).filters
     points = history.price_points(
-        session, search.id, FAKE_DATA_PROVIDERS, passengers=(filters.adults, filters.children)
+        session,
+        search.id,
+        FAKE_DATA_PROVIDERS,
+        passengers=(filters.adults, filters.children),
+        no_overnight_layovers=filters.no_overnight_layovers,
     )
     seen = history.latest_poll_dates(session, search.id)
     today = now.date()

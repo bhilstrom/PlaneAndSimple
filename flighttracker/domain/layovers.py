@@ -6,7 +6,7 @@ stays in one city, so the difference of arrival and next departure is its real l
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 # Below this a missed connection is likely (Google Flights shows no such warning).
 SHORT_MINUTES = 60
@@ -14,6 +14,11 @@ SHORT_MINUTES = 60
 SHORT_AIRPORT_CHANGE_MINUTES = 180
 # Google Flights marks layovers from about 5 hours as long.
 LONG_MINUTES = 5 * 60
+# Landing after midnight (00:00–03:59) and waiting 3+ hours until morning (05:00+) is also an
+# overnight airport wait even though both segments share the same calendar date.
+POST_MIDNIGHT_HOUR = 4
+MORNING_HOUR = 5
+POST_MIDNIGHT_MIN_MINUTES = 180
 
 AIRPORT_CHANGE = "airport_change"
 SHORT = "short"
@@ -60,20 +65,51 @@ def _moment(day: str | None, time: str | None) -> datetime | None:
         return None
 
 
+def _day(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _is_overnight(
+    arriving: dict,
+    leaving: dict,
+    arrival: datetime | None,
+    departure: datetime | None,
+    minutes: int | None,
+) -> bool:
+    arrival_day = arrival.date() if arrival else _day(arriving.get("arrival_date"))
+    departure_day = departure.date() if departure else _day(leaving.get("departure_date"))
+    if arrival_day and departure_day and departure_day > arrival_day:
+        return True
+    return bool(
+        arrival
+        and departure
+        and minutes is not None
+        and arrival.hour < POST_MIDNIGHT_HOUR
+        and departure.hour >= MORNING_HOUR
+        and minutes >= POST_MIDNIGHT_MIN_MINUTES
+    )
+
+
 def layovers(segments: list[dict]) -> list[Layover]:
     """One layover between each two consecutive segments."""
     result = []
     for arriving, leaving in zip(segments, segments[1:], strict=False):
         arrival = _moment(arriving.get("arrival_date"), arriving.get("arrival_time"))
         departure = _moment(leaving.get("departure_date"), leaving.get("departure_time"))
+        minutes = (
+            int((departure - arrival).total_seconds() // 60) if arrival and departure else None
+        )
         result.append(
             Layover(
                 arrival_airport=arriving.get("to") or "?",
                 departure_airport=leaving.get("from") or arriving.get("to") or "?",
-                minutes=int((departure - arrival).total_seconds() // 60)
-                if arrival and departure
-                else None,
-                overnight=bool(arrival and departure and departure.date() > arrival.date()),
+                minutes=minutes,
+                overnight=_is_overnight(arriving, leaving, arrival, departure, minutes),
             )
         )
     return result
@@ -91,3 +127,24 @@ def itinerary_warnings(details: dict | None) -> tuple[str, ...]:
 def has_overnight_layover(details: dict | None) -> bool:
     """True when the outbound or (if loaded) the return flight has an overnight layover."""
     return OVERNIGHT in itinerary_warnings(details)
+
+
+def allowed_observation(
+    details: dict | None, return_date: date | None, *, no_overnight_layovers: bool
+) -> bool:
+    """Whether a stored observation satisfies the overnight-layover filter.
+
+    For round trips with flight segments, a missing `return` itinerary means the return leg
+    was never checked and could be an overnight layover.
+    """
+    if not no_overnight_layovers:
+        return True
+    if has_overnight_layover(details):
+        return False
+    if (
+        return_date is not None
+        and (details or {}).get("segments")
+        and "return" not in (details or {})
+    ):
+        return False
+    return True

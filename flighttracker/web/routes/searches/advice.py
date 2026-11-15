@@ -12,6 +12,7 @@ from flighttracker.domain.booking_advice import advise
 from flighttracker.domain.currencies import currency_decimals
 from flighttracker.i18n import Msg, format_number
 from flighttracker.services import ai, ai_prompts, history
+from flighttracker.services.searches import spec_of
 from flighttracker.web.deps import (
     AuthUser,
     csrf_form,
@@ -43,7 +44,15 @@ def explain(
     observed = history.observation(db, search.id, price_id)
     if observed is None or not (ai.ai_enabled(settings) and settings.ai_explanations):
         return page()
-    rows = list(reversed(history.flight_history(db, observed)))
+    rows = list(
+        reversed(
+            history.flight_history(
+                db,
+                observed,
+                no_overnight_layovers=spec_of(search).filters.no_overnight_layovers,
+            )
+        )
+    )
     advice = advise([row.price for row in rows], observed.departure_date, datetime.now(UTC).date())
     decimals = currency_decimals(observed.currency)
 

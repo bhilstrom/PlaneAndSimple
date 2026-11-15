@@ -104,6 +104,13 @@ def monthly_overview(
     fake_providers: Collection[str] = (),
     *,
     passengers: Passengers | None = None,
+    no_overnight_layovers: bool = False,
 ) -> list[MonthlyPriceRow]:
-    points = price_points(session, search_id, fake_providers, passengers=passengers)
+    points = price_points(
+        session,
+        search_id,
+        fake_providers,
+        passengers=passengers,
+        no_overnight_layovers=no_overnight_layovers,
+    )
     return overview_from_points(points, today)

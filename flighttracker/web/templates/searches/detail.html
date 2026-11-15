@@ -148,7 +148,7 @@
     <dt>{{ _("Overnight layovers") }}</dt><dd>{{ _("excluded") if f.no_overnight_layovers else _("allowed") }}</dd>
     <dt>{{ _("Period") }}</dt><dd>{{ _("{n} months ahead", n=f.months_ahead) }}</dd>
     <dt>{{ _("Departure days") }}</dt><dd>{% if f.days_per_month in labels.DAYS_PER_MONTH_LABELS %}{{ _(labels.DAYS_PER_MONTH_LABELS[f.days_per_month]) }}{% else %}{{ f.days_per_month }}{% endif %}{% if estimate.stay_lengths %} · {{ _("stays of {days} days", days=estimate.stay_lengths | join(", ")) }}{% endif %}</dd>
-    {% if f.trip_type == "round_trip" %}<dt>{{ _("Return flights") }}</dt><dd>{{ _("loaded") if f.return_flights else _("not loaded (chosen on Google Flights)") }}</dd>{% endif %}
+    {% if f.trip_type == "round_trip" %}<dt>{{ _("Return flights") }}</dt><dd>{{ _("loaded") if (f.return_flights or f.no_overnight_layovers) else _("not loaded (chosen on Google Flights)") }}</dd>{% endif %}
     <dt>{{ _("Passengers") }}</dt><dd>{{ _("{adults} adults, {children} children", adults=f.adults, children=f.children) }}</dd>
     <dt>{{ _("Global poll interval") }}</dt><dd>{{ _("every {n} h", n=poll_interval_minutes // 60) }}</dd>
     <dt>{{ _("Scope") }}</dt><dd>{{ _("{routes} routes · {queries} queries · {requests} requests (about {minutes} min) per poll", routes=estimate.routes, queries=estimate.queries, requests=estimate.requests, minutes=estimate.minutes) }}</dd>

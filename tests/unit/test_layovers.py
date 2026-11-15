@@ -1,4 +1,11 @@
-from flighttracker.domain.layovers import has_overnight_layover, itinerary_warnings, layovers
+from datetime import date
+
+from flighttracker.domain.layovers import (
+    allowed_observation,
+    has_overnight_layover,
+    itinerary_warnings,
+    layovers,
+)
 
 
 def segment(origin, destination, departure, arrival):
@@ -72,3 +79,64 @@ def test_has_overnight_layover_checks_outbound_and_return():
     assert not has_overnight_layover({"segments": same_day})
     assert has_overnight_layover({"segments": overnight})
     assert has_overnight_layover({"segments": same_day, "return": {"segments": overnight}})
+
+
+def test_post_midnight_layover_on_same_calendar_date():
+    # Landing at 00:35 and waiting until 08:30 on the same date is an overnight airport wait.
+    sleepover = [
+        segment("MSP", "FLL", "2027-02-20 20:30", "2027-02-21 00:35"),
+        segment("FLL", "SJO", "2027-02-21 08:30", "2027-02-21 10:30"),
+    ]
+    assert layovers(sleepover)[0].warnings == ("overnight", "long")
+    assert has_overnight_layover({"segments": sleepover})
+
+    # A 1h 45m connection at a 24h hub after midnight is not an overnight airport sleepover.
+    quick_hub = [
+        segment("ZRH", "DOH", "2027-02-20 16:00", "2027-02-21 00:30"),
+        segment("DOH", "BKK", "2027-02-21 02:15", "2027-02-21 12:30"),
+    ]
+    assert layovers(quick_hub)[0].warnings == ()
+
+    # A red-eye flight arriving at 05:02 with a 1h 58m morning connection is not an overnight layover.
+    red_eye = [
+        segment("SJO", "DFW", "2027-02-27 00:25", "2027-02-27 05:02"),
+        segment("DFW", "MSP", "2027-02-27 07:00", "2027-02-27 09:28"),
+    ]
+    assert layovers(red_eye)[0].warnings == ()
+
+
+def test_cross_date_without_times_still_counts_as_overnight():
+    segments = [
+        {"to": "DFW", "arrival_date": "2027-02-20"},
+        {"from": "DFW", "departure_date": "2027-02-21"},
+    ]
+    assert layovers(segments)[0].overnight
+
+
+def test_allowed_observation_filters_overnight_and_unverified_returns():
+    daytime = [
+        segment("MSP", "BNA", "2027-02-20 06:00", "2027-02-20 08:20"),
+        segment("BNA", "SJO", "2027-02-20 10:55", "2027-02-20 15:00"),
+    ]
+    overnight = [
+        segment("MSP", "DFW", "2027-02-20 19:08", "2027-02-20 21:48"),
+        segment("DFW", "SJO", "2027-02-21 09:36", "2027-02-21 13:49"),
+    ]
+    ret_day = date(2027, 2, 27)
+
+    assert allowed_observation({"segments": overnight}, ret_day, no_overnight_layovers=False)
+    assert allowed_observation(None, ret_day, no_overnight_layovers=True)
+    assert allowed_observation({"segments": daytime}, None, no_overnight_layovers=True)
+    assert not allowed_observation({"segments": overnight}, None, no_overnight_layovers=True)
+    # Round trip without loaded `return` segments cannot guarantee a non-overnight return leg.
+    assert not allowed_observation({"segments": daytime}, ret_day, no_overnight_layovers=True)
+    assert not allowed_observation(
+        {"segments": daytime, "return": {"segments": overnight}},
+        ret_day,
+        no_overnight_layovers=True,
+    )
+    assert allowed_observation(
+        {"segments": daytime, "return": {"segments": daytime}},
+        ret_day,
+        no_overnight_layovers=True,
+    )

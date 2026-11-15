@@ -13,11 +13,13 @@ from flighttracker.providers.google_flights import (
     FareOption,
     FareRequest,
     GoogleFlightsProvider,
+    fast_flights_return_search,
     fast_flights_search,
     google_flights_search,
     google_return_search,
     parse_fares,
     parse_shopping,
+    return_tfs,
     selected_legs,
     shopping_request_body,
 )
@@ -285,6 +287,20 @@ class TestGoogleFlights:
         assert (second["departure_date"], second["departure_time"]) == ("2026-11-14", "08:20")
         assert second["aircraft"] == "Airbus A350"
 
+    def test_parses_midnight_empty_time_list_as_00_00(self):
+        itinerary = [None] * 10
+        itinerary[1] = ["JetBlue"]
+        itinerary[2] = [
+            self.segment("MSP", "FLL", "101", [20, 30], [], 20, 210),
+            self.segment("FLL", "SJO", "202", [8], [10, 30], 21, 150),
+        ]
+        itinerary[2][0][21] = [2026, 11, 21]
+        itinerary[2][1][20] = itinerary[2][1][21] = [2026, 11, 21]
+        itinerary[5], itinerary[7], itinerary[8] = [20, 30], [2026, 11, 21], [10, 30]
+        (fare,) = parse_fares(self.page(None, [[[itinerary, [[None, 320]]]]]))
+        assert fare.details["segments"][0]["arrival_time"] == "00:00"
+        assert fare.details["segments"][1]["departure_time"] == "08:00"
+
     def test_empty_result_lists(self):
         assert parse_fares(self.page(None, None)) == []
         assert parse_fares(self.page(None, [None])) == []
@@ -350,11 +366,13 @@ class TestGoogleFlights:
         provider = GoogleFlightsProvider(
             search=lambda r: options, clock=lambda: NOW, sleep=lambda _: None
         )
-        (with_overnight,) = provider.fetch_current(query(days_per_month=1))
+        (with_overnight,) = provider.fetch_current(
+            query(trip_type=TripType.ONE_WAY, days_per_month=1)
+        )
         assert (with_overnight.price, with_overnight.airline) == (Decimal(140), "TP")
 
         (without_overnight,) = provider.fetch_current(
-            query(days_per_month=1, no_overnight_layovers=True)
+            query(trip_type=TripType.ONE_WAY, days_per_month=1, no_overnight_layovers=True)
         )
         assert (without_overnight.price, without_overnight.airline) == (Decimal(210), "IB")
 
@@ -362,7 +380,10 @@ class TestGoogleFlights:
             search=lambda r: [options[0]], clock=lambda: NOW, sleep=lambda _: None
         )
         assert (
-            only_overnight.fetch_current(query(days_per_month=1, no_overnight_layovers=True)) == []
+            only_overnight.fetch_current(
+                query(trip_type=TripType.ONE_WAY, days_per_month=1, no_overnight_layovers=True)
+            )
+            == []
         )
 
     def test_skips_past_days(self):
@@ -479,11 +500,57 @@ class TestGoogleResultList:
 
         assert google_flights_search(ROUND_TRIP, post=broken, fallback=lambda r: page) == page
 
-    def test_return_search_has_no_page_fallback(self):
-        with pytest.raises(ProviderError, match="kept answering with an error"):
-            google_return_search(
-                ROUND_TRIP, [], post=lambda body, currency: ERROR_RESPONSE, sleep=lambda _: None
+        # Non-ErrorResponse failures (e.g. Google's bare [13] bot-guard rejection) fail fast
+        # without sleeping 24s before falling back to the result page.
+        fast_waits = []
+        bgr_gate = ")]}'\n\n" + '[["wrb.fr",null,null,null,null,[13]]]\n'
+        assert (
+            google_flights_search(
+                ROUND_TRIP,
+                post=lambda body, currency: bgr_gate,
+                sleep=fast_waits.append,
+                fallback=lambda r: page,
             )
+            == page
+        )
+        assert fast_waits == []
+
+    def test_reads_the_return_page_when_the_result_list_keeps_failing(self, monkeypatch):
+        import primp
+
+        legs = [("ZRH", "2026-11-12", "AUH", "EY", "140")]
+        tfs = return_tfs(ROUND_TRIP, legs)
+        assert tfs and "=" not in tfs
+
+        seen_params = {}
+        html = TestGoogleFlights.page([[_row(1040, "EY", ("405", "BKK", "ZRH"), day=26)]], None)
+
+        class PageClient:
+            def __init__(self, **kwargs):
+                pass
+
+            def get(self, url, params=None, headers=None):
+                seen_params.update(params or {})
+                return type("Response", (), {"text": html})()
+
+        monkeypatch.setattr(primp, "Client", PageClient)
+        waits = []
+        bgr_gate = ")]}'\n\n" + '[["wrb.fr",null,null,null,null,[13]]]\n'
+        (back,) = google_return_search(
+            ROUND_TRIP,
+            legs,
+            post=lambda body, currency: bgr_gate,
+            sleep=waits.append,
+        )
+        assert waits == []
+        assert seen_params == {"tfs": tfs, "hl": "en", "curr": "CHF"}
+        assert (back.price, back.airline) == (1040, "EY")
+        assert (
+            fast_flights_return_search(
+                FareRequest("ZRH", "BKK", date(2026, 11, 12), None, "economy", 1, "CHF", None), legs
+            )
+            == []
+        )
 
 
 class TestReturnFlights:
@@ -654,6 +721,116 @@ class TestReturnFlights:
             )
             == []
         )
+
+        # Even when `return_flights=False`, round-trip `no_overnight_layovers=True` must still
+        # check return flights (and drop unverified outbounds when return fetching fails).
+        (verified_without_flag,) = provider.fetch_current(
+            query(days_per_month=1, return_flights=False, no_overnight_layovers=True)
+        )
+        assert verified_without_flag.price == Decimal(1060)
+        assert verified_without_flag.details["return"]["segments"][0]["flight"] == "EY 401"
+
+        for unverified in ([], ProviderError("down")):
+            assert (
+                self.provider(unverified).fetch_current(
+                    query(days_per_month=1, return_flights=True, no_overnight_layovers=True)
+                )
+                == []
+            )
+
+    def test_branch_and_bound_finds_cheaper_daytime_return_on_second_outbound(self):
+        def outbound(price, airline, number):
+            return FareOption(
+                price,
+                0,
+                airline,
+                {
+                    "airlines": [airline],
+                    "segments": [
+                        {
+                            "flight": f"{airline} {number}",
+                            "from": "ZRH",
+                            "to": "BCN",
+                            "departure_date": "2026-11-01",
+                            "departure_time": "09:00",
+                            "arrival_date": "2026-11-01",
+                            "arrival_time": "11:00",
+                        }
+                    ],
+                },
+            )
+
+        overnight_back = FareOption(
+            350,
+            1,
+            "NK",
+            {
+                "segments": [
+                    {
+                        "flight": "NK 10",
+                        "from": "BCN",
+                        "to": "MAD",
+                        "departure_date": "2026-11-08",
+                        "departure_time": "21:00",
+                        "arrival_date": "2026-11-08",
+                        "arrival_time": "22:30",
+                    },
+                    {
+                        "flight": "NK 11",
+                        "from": "MAD",
+                        "to": "ZRH",
+                        "departure_date": "2026-11-09",
+                        "departure_time": "07:30",
+                        "arrival_date": "2026-11-09",
+                        "arrival_time": "09:50",
+                    },
+                ]
+            },
+        )
+        daytime_back = lambda price, airline, number: FareOption(  # noqa: E731
+            price,
+            0,
+            airline,
+            {
+                "segments": [
+                    {
+                        "flight": f"{airline} {number}",
+                        "from": "BCN",
+                        "to": "ZRH",
+                        "departure_date": "2026-11-08",
+                        "departure_time": "14:00",
+                        "arrival_date": "2026-11-08",
+                        "arrival_time": "16:00",
+                    }
+                ]
+            },
+        )
+        outbounds = [
+            outbound(350, "NK", "1"),  # cheap only with overnight return; daytime return is 950
+            outbound(480, "LX", "2"),  # daytime return is 480
+            outbound(520, "IB", "3"),  # >= 480 lower bound, so never queried
+        ]
+        returns_by_flight = {
+            ("NK", "1"): [overnight_back, daytime_back(950, "NK", "99")],
+            ("LX", "2"): [daytime_back(480, "LX", "22")],
+            ("IB", "3"): [daytime_back(520, "IB", "33")],
+        }
+        checked = []
+
+        def return_search(request, legs):
+            key = (legs[0][3], legs[0][4])
+            checked.append(key)
+            return returns_by_flight[key]
+
+        provider = GoogleFlightsProvider(
+            search=lambda r: outbounds,
+            return_search=return_search,
+            clock=lambda: NOW,
+            sleep=lambda _: None,
+        )
+        (quote,) = provider.fetch_current(query(days_per_month=1, no_overnight_layovers=True))
+        assert (quote.price, quote.airline) == (Decimal(480), "LX")
+        assert checked == [("NK", "1"), ("LX", "2")]
 
 
 class _Settings:

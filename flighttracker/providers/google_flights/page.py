@@ -1,6 +1,8 @@
 """Fallback: fares from the Google Flights result page (only the ~10 flights it shows without
-"more flights"). fast-flights (pinned in pyproject.toml) builds the page URL."""
+"more flights"). fast-flights (pinned in pyproject.toml) builds the outbound page URL; return
+pages pin the chosen outbound legs in `tfs`."""
 
+import base64
 import json
 import re
 from dataclasses import replace
@@ -12,11 +14,13 @@ from flighttracker.providers.google_flights.common import (
     URL,
     FareOption,
     FareRequest,
+    SelectedLeg,
     fare_options,
     http_client,
 )
 
 _RESULTS_SCRIPT = re.compile(r'<script[^>]*class="ds:1"[^>]*>(.*?)</script>', re.S)
+_PAGE_SEAT = {"economy": 1, "premium-economy": 2, "business": 3, "first": 4}
 
 
 def parse_fares(html: str) -> list[FareOption]:
@@ -68,23 +72,113 @@ def _page_query(request: FareRequest):
     )
 
 
+def _varint(value: int) -> bytes:
+    out = bytearray()
+    while value > 0x7F:
+        out.append((value & 0x7F) | 0x80)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
+
+
+def _varint_field(field: int, value: int) -> bytes:
+    return _varint(field << 3) + _varint(value)
+
+
+def _bytes_field(field: int, data: bytes) -> bytes:
+    return _varint((field << 3) | 2) + _varint(len(data)) + data
+
+
+def _str_field(field: int, text: str) -> bytes:
+    return _bytes_field(field, text.encode())
+
+
+def _flight_data(
+    origin: str,
+    destination: str,
+    day: str,
+    max_stops: int | None,
+    selected: list[SelectedLeg] | None = None,
+) -> bytes:
+    buf = _str_field(2, day)
+    for leg_origin, leg_day, leg_dest, airline, number in selected or ():
+        leg = (
+            _str_field(1, leg_origin)
+            + _str_field(2, leg_day)
+            + _str_field(3, leg_dest)
+            + _str_field(5, airline)
+            + _str_field(6, number)
+        )
+        buf += _bytes_field(4, leg)
+    if max_stops is not None and max_stops < 3:
+        buf += _varint_field(5, max_stops)
+    buf += _bytes_field(13, _varint_field(1, 1) + _str_field(2, origin))
+    buf += _bytes_field(14, _varint_field(1, 1) + _str_field(2, destination))
+    return buf
+
+
+def return_tfs(request: FareRequest, outbound: list[SelectedLeg]) -> str:
+    """`tfs` query parameter for the return-flight page of a chosen outbound itinerary."""
+    if request.return_date is None:
+        raise ValueError("return_tfs requires return_date")
+    buf = _varint_field(1, 28) + _varint_field(2, 2)
+    buf += _bytes_field(
+        3,
+        _flight_data(
+            request.origin,
+            request.destination,
+            request.departure.isoformat(),
+            request.max_stops,
+            outbound,
+        ),
+    )
+    buf += _bytes_field(
+        3,
+        _flight_data(
+            request.destination,
+            request.origin,
+            request.return_date.isoformat(),
+            request.max_stops,
+        ),
+    )
+    for _ in range(request.adults):
+        buf += _varint_field(8, 1)
+    for _ in range(request.children):
+        buf += _varint_field(8, 2)
+    buf += _varint_field(9, _PAGE_SEAT[request.seat])
+    buf += _varint_field(14, 1) + _varint_field(19, 1)
+    return base64.urlsafe_b64encode(buf).decode("ascii").rstrip("=")
+
+
 def with_url(options: list[FareOption], request: FareRequest) -> list[FareOption]:
     """Link to exactly this search on Google Flights (for checking and booking)."""
     url = f"{URL}?{urlencode(_page_query(request).params())}"
     return [replace(o, details={**o.details, "url": url}) if o.details else o for o in options]
 
 
-def fast_flights_search(request: FareRequest) -> list[FareOption]:
-    """Fares from the result page (only the flights it shows without "more flights")."""
-    query = _page_query(request)
+def _fetch_page(params: dict[str, str]) -> list[FareOption]:
     try:
-        html = (
-            http_client().get(URL, params=query.params(), headers={"Cookie": CONSENT_COOKIE}).text
-        )
+        html = http_client().get(URL, params=params, headers={"Cookie": CONSENT_COOKIE}).text
         if "<title>Before you continue" in html:
             raise ProviderError("Google Flights shows its cookie consent page instead of results")
-        return with_url(parse_fares(html), request)
+        return parse_fares(html)
     except ProviderError:
         raise
     except Exception as exc:
         raise ProviderError(f"Google Flights query failed ({type(exc).__name__})") from None
+
+
+def fast_flights_search(request: FareRequest) -> list[FareOption]:
+    """Fares from the result page (only the flights it shows without "more flights")."""
+    query = _page_query(request)
+    return with_url(_fetch_page(query.params()), request)
+
+
+def fast_flights_return_search(
+    request: FareRequest, outbound: list[SelectedLeg]
+) -> list[FareOption]:
+    """Return fares for the given outbound flights from the Google Flights result page."""
+    if request.return_date is None:
+        return []
+    params = {"tfs": return_tfs(request, outbound), "hl": "en", "curr": request.currency}
+    return _fetch_page(params)

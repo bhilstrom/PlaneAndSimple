@@ -236,3 +236,116 @@ def test_flight_trend_has_explicit_daily_weekly_monthly_changes():
         ("1w", Decimal("-30.00")),
         ("1m", Decimal("-50.00")),
     ]
+
+
+def test_price_points_and_series_exclude_overnight_and_unverified_round_trip_rows():
+    from flighttracker.services.history import price_points
+    from flighttracker.services.price_trends import price_series
+
+    daytime = {
+        "segments": [
+            {
+                "flight": "UA 1",
+                "from": "MSP",
+                "to": "IAH",
+                "departure_date": "2027-02-20",
+                "departure_time": "08:00",
+                "arrival_date": "2027-02-20",
+                "arrival_time": "11:00",
+            },
+            {
+                "flight": "UA 2",
+                "from": "IAH",
+                "to": "SJO",
+                "departure_date": "2027-02-20",
+                "departure_time": "13:00",
+                "arrival_date": "2027-02-20",
+                "arrival_time": "16:30",
+            },
+        ]
+    }
+    overnight = {
+        "segments": [
+            {
+                "flight": "AA 1",
+                "from": "MSP",
+                "to": "DFW",
+                "departure_date": "2027-02-20",
+                "departure_time": "19:00",
+                "arrival_date": "2027-02-20",
+                "arrival_time": "21:45",
+            },
+            {
+                "flight": "AA 2",
+                "from": "DFW",
+                "to": "SJO",
+                "departure_date": "2027-02-21",
+                "departure_time": "09:30",
+                "arrival_date": "2027-02-21",
+                "arrival_time": "13:45",
+            },
+        ]
+    }
+    verified_round_trip = {**daytime, "return": daytime}
+
+    def row(row_id, price, hour, details):
+        return SimpleNamespace(
+            id=row_id,
+            origin_iata="MSP",
+            destination_iata="SJO",
+            cabin_class=CabinClass.ECONOMY,
+            currency="USD",
+            departure_date=date(2027, 2, 20),
+            return_date=date(2027, 2, 27),
+            stops=1,
+            price=Decimal(price),
+            airline="UA",
+            details=details,
+            observed_at=datetime(2026, 11, 14, hour, tzinfo=UTC),
+            provider="google_flights",
+        )
+
+    # Newest first for price_points:
+    # id=4 ($410, unverified return) and id=3 ($390, overnight) are skipped;
+    # id=2 ($868, verified daytime) becomes current, with previous_price=$890 (id=1), NOT $390!
+    rows_desc = [
+        row(4, "410.00", 15, daytime),
+        row(3, "390.00", 14, {**overnight, "return": daytime}),
+        row(2, "868.00", 13, verified_round_trip),
+        row(1, "890.00", 12, verified_round_trip),
+    ]
+
+    class FakeSession:
+        def scalars(self, _stmt):
+            return rows_desc
+
+        def execute(self, _stmt):
+            return [
+                (
+                    r.origin_iata,
+                    r.destination_iata,
+                    r.cabin_class,
+                    r.currency,
+                    r.departure_date,
+                    r.return_date,
+                    r.price,
+                    r.observed_at,
+                    r.details,
+                )
+                for r in reversed(rows_desc)
+            ]
+
+    (point,) = price_points(FakeSession(), 1, passengers=(1, 0), no_overnight_layovers=True)
+    assert (point.id, point.price, point.previous_price) == (
+        2,
+        Decimal("868.00"),
+        Decimal("890.00"),
+    )
+
+    series = price_series(
+        FakeSession(), 1, date(2027, 2, 1), passengers=(1, 0), no_overnight_layovers=True
+    )
+    assert [obs.price for obs in series[flight_key(point)]] == [
+        Decimal("890.00"),
+        Decimal("868.00"),
+    ]

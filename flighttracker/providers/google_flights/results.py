@@ -15,6 +15,7 @@ from flighttracker.providers.google_flights.common import (
     ROUND_TRIP_CODE,
     FareOption,
     FareRequest,
+    ReturnSearchFn,
     SearchFn,
     SelectedLeg,
     fare_options,
@@ -23,7 +24,11 @@ from flighttracker.providers.google_flights.common import (
     with_retries,
     wrb_payloads,
 )
-from flighttracker.providers.google_flights.page import fast_flights_search, with_url
+from flighttracker.providers.google_flights.page import (
+    fast_flights_return_search,
+    fast_flights_search,
+    with_url,
+)
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +153,17 @@ def google_return_search(
     *,
     post: ShoppingPostFn = google_shopping_post,
     sleep: Callable[[float], None] = time.sleep,
+    fallback: ReturnSearchFn | None = None,
 ) -> list[FareOption]:
     """Return flights for the given outbound flights; prices are round-trip totals."""
-    body = shopping_request_body(request, outbound)
-    return shopping_results(body, request.currency, post=post, sleep=sleep)
+    try:
+        body = shopping_request_body(request, outbound)
+        return shopping_results(body, request.currency, post=post, sleep=sleep)
+    except ProviderError as exc:
+        log.info(
+            "%s→%s: return list failed (%s), reading the page",
+            request.destination,
+            request.origin,
+            exc,
+        )
+        return (fallback or fast_flights_return_search)(request, outbound)
